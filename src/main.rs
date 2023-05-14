@@ -8,6 +8,13 @@ struct GetPost {
     status: String,
 }
 #[derive(Deserialize)]
+struct GetInput {
+    id: String,
+    value: Option<String>,
+    save: Option<bool>,
+}
+
+#[derive(Deserialize)]
 struct SetPostInput {
     id: String,
     value: String,
@@ -50,60 +57,50 @@ fn save(data: &HashMap<String, String>) {
     serde_json::to_writer(file, data).unwrap();
 }
 #[get("/")]
-async fn get_get(
-    state: web::Data<AppState>,
-    query: web::Query<HashMap<String, String>>,
-) -> impl Responder {
-    let id = query.get("id");
-    return match id {
-        Some(dt) => match state.hash_map.lock().expect("something went wrong").get(dt) {
-            Some(res) => HttpResponse::Ok().body(res.to_string()),
-            None => HttpResponse::NotFound().body("Not found"),
-        },
-        None => HttpResponse::BadRequest().body("Empty id"),
+async fn get_get(state: web::Data<AppState>, query: web::Query<GetInput>) -> impl Responder {
+    return match state
+        .hash_map
+        .lock()
+        .expect("something went wrong")
+        .get(&query.id)
+    {
+        Some(res) => HttpResponse::Ok().body(res.to_string()),
+        None => HttpResponse::NotFound().body("Not found"),
     };
 }
-#[post("/get")]
-async fn get_post(
-    req: web::Json<HashMap<String, String>>,
-    state: web::Data<AppState>,
-) -> impl Responder {
-    return match req.get("id") {
-        Some(id) => match state.hash_map.lock().expect("something went wrong").get(id) {
-            Some(dt) => HttpResponse::Ok().json(GetPost {
-                result: dt.to_string(),
-                status: "ok".to_string(),
-            }),
-            None => HttpResponse::NotFound().json(GetPost {
-                result: "".to_string(),
-                status: "not_found".to_string(),
-            }),
-        },
-        None => HttpResponse::BadRequest().body("Empty id"),
-    };
-}
-#[post("/")]
-async fn set_post(state: web::Data<AppState>, req: web::Json<SetPostInput>) -> impl Responder {
-    let ret = match (&req.id, &req.value) {
-        (e, f) => {
-            let mut map = state.hash_map.lock().expect("something went wrong");
-            map.insert(e.to_string(), f.to_string());
 
-            HttpResponse::Ok().json(SetPostOutput {
-                id: e.to_string(),
-                value: f.to_string(),
-                status: "ok".to_string(),
-            })
-        }
-        _ => HttpResponse::BadRequest().json(SetPostOutput {
-            id: "".to_string(),
-            value: "".to_string(),
-            status: "fail".to_string(),
+#[post("/get")]
+async fn get_post(req: web::Json<GetInput>, state: web::Data<AppState>) -> impl Responder {
+    return match state
+        .hash_map
+        .lock()
+        .expect("something went wrong")
+        .get(&req.id)
+    {
+        Some(dt) => HttpResponse::Ok().json(GetPost {
+            result: dt.to_string(),
+            status: "ok".to_string(),
+        }),
+        None => HttpResponse::NotFound().json(GetPost {
+            result: "".to_string(),
+            status: "not_found".to_string(),
         }),
     };
+}
+
+#[post("/")]
+async fn set_post(state: web::Data<AppState>, req: web::Json<SetPostInput>) -> impl Responder {
+    let mut map = state.hash_map.lock().expect("something went wrong");
+    map.insert(req.id.to_string(), req.value.to_string());
+
     match req.save {
         Some(true) => save(&state.hash_map.lock().unwrap()),
         _ => println!("not saved"),
     }
-    return ret;
+
+    return HttpResponse::Ok().json(SetPostOutput {
+        id: req.id.to_string(),
+        value: req.value.to_string(),
+        status: "ok".to_string(),
+    });
 }
