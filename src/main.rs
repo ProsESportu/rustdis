@@ -98,9 +98,9 @@ async fn set_post(state: web::Data<AppState>, req: web::Json<SetPostInput>) -> i
         _ => println!("not saved"),
     }
 
-    return HttpResponse::Ok().json(SetPostOutput {
+    HttpResponse::Ok().json(SetPostOutput {
         id: req.id.to_string(),
         value: req.value.to_string(),
         status: "ok".to_string(),
-    });
+    })
 }
