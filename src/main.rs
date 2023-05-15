@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs::File, io::Result, sync::Mutex};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Result, Write},
+    sync::Mutex,
+};
 
 use actix_web::{get, post, web, App, HttpResponse, HttpServer, Responder};
 use serde::{Deserialize, Serialize};
@@ -8,8 +13,11 @@ struct GetPost {
     status: String,
 }
 #[derive(Deserialize)]
+#[derive(Debug)]
 struct GetInput {
     id: String,
+    password: String,
+    user: String,
     value: Option<String>,
     save: Option<bool>,
 }
@@ -28,9 +36,25 @@ struct SetPostOutput {
 }
 struct AppState {
     hash_map: Mutex<HashMap<String, String>>,
+    users: HashMap<String, String>,
 }
 #[actix_web::main]
 async fn main() -> Result<()> {
+    let users: HashMap<String, String> = match File::open("./users.json") {
+        Ok(e) => serde_json::from_reader(e).unwrap(),
+        Err(e) => {
+            println!("no users.json detected \n {}", e);
+            let mut pass = String::new();
+            print!("enter the root password:");
+            std::io::stdout().flush().unwrap();
+            std::io::stdin().read_line(&mut pass).unwrap();
+            let mut json = HashMap::new();
+            json.insert("root".to_string(), pass);
+            let file = File::create("./users.json").unwrap();
+            serde_json::to_writer(file, &json).unwrap();
+            json
+        }
+    };
     let data: HashMap<String, String> = match File::open("./db.json") {
         Ok(e) => serde_json::from_reader(e).unwrap(),
         Err(e) => {
@@ -40,6 +64,7 @@ async fn main() -> Result<()> {
     };
     let state = web::Data::new(AppState {
         hash_map: Mutex::new(data.clone()),
+        users: users.clone(),
     });
     HttpServer::new(move || {
         App::new()
@@ -71,21 +96,28 @@ async fn get_get(state: web::Data<AppState>, query: web::Query<GetInput>) -> imp
 
 #[post("/get")]
 async fn get_post(req: web::Json<GetInput>, state: web::Data<AppState>) -> impl Responder {
-    return match state
-        .hash_map
-        .lock()
-        .expect("something went wrong")
-        .get(&req.id)
-    {
-        Some(dt) => HttpResponse::Ok().json(GetPost {
-            result: dt.to_string(),
-            status: "ok".to_string(),
-        }),
-        None => HttpResponse::NotFound().json(GetPost {
-            result: "".to_string(),
-            status: "not_found".to_string(),
-        }),
-    };
+
+    match state.users.get(&req.user) {
+        Some(e) => match *e == req.password {
+            true => match state
+                .hash_map
+                .lock()
+                .expect("something went wrong")
+                .get(&req.id)
+            {
+                Some(dt) => HttpResponse::Ok().json(GetPost {
+                    result: dt.to_string(),
+                    status: "ok".to_string(),
+                }),
+                None => HttpResponse::NotFound().json(GetPost {
+                    result: "".to_string(),
+                    status: "not_found".to_string(),
+                }),
+            },
+            false => HttpResponse::Forbidden().body("acees deneid"),
+        },
+        None => HttpResponse::Forbidden().body("no such user"),
+    }
 }
 
 #[post("/")]
